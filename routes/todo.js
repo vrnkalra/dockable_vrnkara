@@ -20,29 +20,34 @@ router.post('/list', async (req, res, next) => {
     command
   } = extractValues(req.body);
 
-
   try {
 
-    let team = await Team.findOne({
-      teamID
-    })
-    //todo : team does not exist    
-    let channel = await Channel.findOne({
-      channelID,
-      teamId: team._id
-    });
-    //todo : channel does not exist
+    let team = await getTeam(teamID);
+
+    if (!team) {
+      team = await createTeam(teamID, domain);
+    }
+
+    let channel = await getChannel(channelID, team._id);
+    if (!channel) {
+      channel = await createChannel(channelID, channelName, team._id);
+    }
+
     const todoList = await Todo.find({
-      // status: false,
+      status: false,
       channelId: channel._id,
-      // teamId: team._id
+      teamId: team._id
     })
     console.log(todoList);
-    //todo : handling for no todo's
     let result = "";
-    todoList.forEach((task, index) => {
-      result += (index + 1) + ". " + task.text + "\n";
-    })
+    if (todoList.length > 0) {
+
+      todoList.forEach((task, index) => {
+        result += (index + 1) + ". " + task.text + "\n";
+      })
+    } else {
+      result = "No TODOs"
+    }
 
     res.send({
       "response_type": "in_channel",
@@ -54,7 +59,6 @@ router.post('/list', async (req, res, next) => {
 
   } catch (e) {
 
-    console.log("failed due to ")
     console.log(e)
 
     res.status(500).send({
@@ -79,39 +83,19 @@ router.post('/add', async (req, res, next) => {
   } = extractValues(req.body);
 
   try {
-    let team = await Team.findOne({
-      teamID
-    })
+    let team = await getTeam(teamID);
 
     if (!team) {
-      team = new Team({
-        teamID,
-        domain
-      })
-      await team.save();
+      team = await createTeam(teamID, domain);
     }
 
-    let channel = await Channel.findOne({
-      channelID,
-      teamId: team._id
-    });
+    let channel = await getChannel(channelID, team._id);
 
     if (!channel) {
-      channel = new Channel({
-        channelID,
-        channelName,
-        teamId: team._id
-      })
-      await channel.save();
+      channel = await createChannel(channelID, channelName, team._id);
     }
 
-    let todo = new Todo({
-      channelId: channel._id,
-      teamId: team._id,
-      text
-    })
-
-    todo.save();
+    await createTodo(channel._id, team._id, text);
 
     res.send({
       "response_type": "in_channel",
@@ -123,7 +107,6 @@ router.post('/add', async (req, res, next) => {
 
   } catch (e) {
 
-    console.log("failed due to ")
     console.log(e)
 
     res.status(500).send({
@@ -146,13 +129,47 @@ router.post('/mark', async (req, res, next) => {
     command
   } = extractValues(req.body);
 
-  res.send({
-    "response_type": "in_channel",
-    "text": "It's 80 degrees right now.",
-    "attachments": [{
-      "text": "Partly cloudy today and tomorrow"
-    }]
-  })
+  try {
+    let team = await getTeam(teamID);
+    if (!team) {
+      team = await createTeam(teamID, domain);
+    }
+
+    let channel = await getChannel(channelID, team._id);
+    if (!channel) {
+      channel = await createChannel(channelID, channelName, team._id);
+    }
+
+    const todo = await Todo.findOneAndUpdate({
+      text,
+      channelId: channel._id,
+      teamId: team._id
+    }, {
+      status: true
+    }, {
+      new: true
+    });
+
+    if (!todo) {
+      res.status(200).send({
+        "response_type": "in_channel",
+        "text": "There is no such todo task. Please try again with a valid todo task.",
+      });
+    } else {
+      res.status(200).send({
+        "response_type": "in_channel",
+        "text": "Task successfully marked as completed.",
+      })
+    }
+  } catch (e) {
+
+    console.log(e)
+
+    res.status(500).send({
+      "response_type": "in_channel",
+      "text": "Failed to add message to list",
+    })
+  }
 });
 
 function extractValues(body) {
@@ -170,4 +187,43 @@ function extractValues(body) {
   }
 }
 
+async function getTeam(teamID) {
+  return Team.findOne({
+    teamID
+  });
+}
+
+async function createTeam(teamID, domain) {
+  let team = new Team({
+    teamID,
+    domain
+  });
+  return team.save();
+}
+
+async function getChannel(channelID, teamId) {
+  return Channel.findOne({
+    channelID,
+    teamId
+  });
+}
+
+async function createChannel(channelID, channelName, teamId) {
+  let channel = new Channel({
+    channelID,
+    channelName,
+    teamId
+  });
+  return channel.save();
+}
+
+async function createTodo(channelId, teamId, text) {
+  let todo = new Todo({
+    channelId,
+    teamId,
+    text,
+  })
+
+  return todo.save();
+}
 module.exports = router;
