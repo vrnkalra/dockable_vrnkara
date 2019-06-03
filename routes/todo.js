@@ -143,7 +143,8 @@ router.post('/mark', async (req, res, next) => {
     const todo = await Todo.findOneAndUpdate({
       text,
       channelId: channel._id,
-      teamId: team._id
+      teamId: team._id,
+      status: false
     }, {
       status: true
     }, {
